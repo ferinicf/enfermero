@@ -1,0 +1,32 @@
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Nunito', ui-sans-serif, system-ui, sans-serif;
+  --color-medi-teal: #0F766E;
+  --color-medi-dark: #134E4A;
+  --color-medi-mid: #14B8A6;
+  --color-medi-mint: #CCFBF1;
+  --color-medi-light: #F0FDFA;
+  --color-medi-amber: #F59E0B;
+  --color-medi-red: #DC2626;
+}
+
+html {
+  font-size: 17px;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: #F8FAFC;
+  margin: 0;
+  padding: 0;
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: white;
+  }
+}
