@@ -1,21 +1,25 @@
 import React, { useState, useEffect } from 'react';
-import { Medicine, DoseLog, ScheduledDose } from '../types';
+import { Medicine, DoseLog, ScheduledDose, VitalLog } from '../types';
 import {
   dosesForDate, todayStr, nowHM, formatTime12, minutesUntil, humanDelta,
-  treatmentDay, formatDateLong, adherenceStats, isActiveOn,
+  treatmentDay, formatDateLong, adherenceStats, isActiveOn, vitalSummary,
 } from '../utils';
 import EditDoseModal from './EditDoseModal';
+import VitalsForm, { VitalDraft } from './VitalsForm';
 import {
   Camera, Check, X, Clock, AlarmClock, Utensils, Printer, PartyPopper,
-  Share2, Pencil, Plus, HeartPulse,
+  Share2, Pencil, Plus, HeartPulse, Activity,
 } from 'lucide-react';
 
 interface Props {
   medicines: Medicine[];
   logs: DoseLog[];
+  vitals: VitalLog[];
   onMark: (medicineId: string, date: string, time: string, status: 'taken' | 'skipped', givenTime?: string) => void;
   onEditLog: (log: DoseLog, status: 'taken' | 'skipped', givenTime: string) => void;
   onRemoveLog: (log: DoseLog) => void;
+  onSaveVital: (draft: VitalDraft, existingId?: string) => void;
+  onDeleteVital: (id: string) => void;
   onGoScan: () => void;
 }
 
@@ -124,10 +128,14 @@ const DoseRow: React.FC<{
   );
 };
 
-const TodayView: React.FC<Props> = ({ medicines, logs, onMark, onEditLog, onRemoveLog, onGoScan }) => {
+const TodayView: React.FC<Props> = ({
+  medicines, logs, vitals, onMark, onEditLog, onRemoveLog, onSaveVital, onDeleteVital, onGoScan,
+}) => {
   // re-render cada minuto para actualizar los contadores de tiempo
   const [, setTick] = useState(0);
   const [editing, setEditing] = useState<ScheduledDose | null>(null);
+  const [vitalsOpen, setVitalsOpen] = useState(false);
+  const [editingVital, setEditingVital] = useState<VitalLog | null>(null);
   useEffect(() => {
     const i = setInterval(() => setTick(t => t + 1), 60000);
     return () => clearInterval(i);
@@ -171,14 +179,67 @@ const TodayView: React.FC<Props> = ({ medicines, logs, onMark, onEditLog, onRemo
     );
   }
 
+  const todayVitals = vitals
+    .filter(v => v.date === today)
+    .sort((a, b) => a.time.localeCompare(b.time));
+
+  const vitalsSection = (
+    <div className="space-y-3">
+      <h3 className="font-extrabold text-slate-400 uppercase text-sm tracking-wide pt-2 flex items-center gap-2">
+        <Activity className="w-4 h-4" /> Signos vitales de hoy
+      </h3>
+      {todayVitals.map(v => (
+        <button
+          key={v.id}
+          onClick={() => setEditingVital(v)}
+          className="w-full text-left bg-white rounded-2xl p-4 shadow-sm flex items-center gap-3 active:scale-[0.98] transition-transform"
+        >
+          <span className="w-10 h-10 rounded-xl bg-rose-50 text-rose-500 flex items-center justify-center shrink-0">
+            <HeartPulse className="w-5 h-5" />
+          </span>
+          <div className="flex-1 min-w-0">
+            <p className="font-extrabold text-slate-800 leading-tight">{vitalSummary(v) || 'Nota'}</p>
+            <p className="text-xs font-semibold text-slate-400 mt-0.5">
+              {formatTime12(v.time)}{v.by ? ` · ${v.by}` : ''}{v.notes ? ` · ${v.notes}` : ''}
+            </p>
+          </div>
+          <Pencil className="w-4 h-4 text-slate-300 shrink-0" />
+        </button>
+      ))}
+      <button
+        onClick={() => setVitalsOpen(true)}
+        className="w-full border-2 border-dashed border-slate-300 text-slate-500 font-extrabold py-3.5 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform bg-white/60"
+      >
+        <Plus className="w-5 h-5" /> Registrar signos vitales
+      </button>
+    </div>
+  );
+
+  const vitalsModals = (
+    <>
+      {(vitalsOpen || editingVital) && (
+        <VitalsForm
+          initial={editingVital}
+          onSave={onSaveVital}
+          onDelete={editingVital ? onDeleteVital : undefined}
+          onClose={() => { setVitalsOpen(false); setEditingVital(null); }}
+        />
+      )}
+    </>
+  );
+
   if (schedDoses.length === 0 && prnMeds.length === 0) {
     return (
-      <div className="text-center py-16 px-6">
-        <PartyPopper className="w-14 h-14 mx-auto text-medi-teal mb-4" />
-        <h2 className="text-2xl font-extrabold text-slate-800 mb-2">Sin tomas para hoy</h2>
-        <p className="text-slate-500 font-semibold">
-          Ningún tratamiento activo tiene dosis programadas hoy.
-        </p>
+      <div className="space-y-4">
+        <div className="text-center py-10 px-6">
+          <PartyPopper className="w-14 h-14 mx-auto text-medi-teal mb-4" />
+          <h2 className="text-2xl font-extrabold text-slate-800 mb-2">Sin tomas para hoy</h2>
+          <p className="text-slate-500 font-semibold">
+            Ningún tratamiento activo tiene dosis programadas hoy.
+          </p>
+        </div>
+        {vitalsSection}
+        {vitalsModals}
       </div>
     );
   }
@@ -199,6 +260,9 @@ const TodayView: React.FC<Props> = ({ medicines, logs, onMark, onEditLog, onRemo
     prnDoses.forEach(d => {
       if (d.status !== 'taken') return;
       lines.push(`🆘 ${formatTime12(d.time)} · ${d.medicine.name}, ${d.medicine.dose} (se dio por síntomas)`);
+    });
+    todayVitals.forEach(v => {
+      lines.push(`🩺 ${formatTime12(v.time)} · ${vitalSummary(v) || 'Nota'}${v.notes ? ` — ${v.notes}` : ''}`);
     });
     if (schedDoses.length > 0) lines.push('', `Completadas: ${takenCount} de ${schedDoses.length}`);
     const stats = adherenceStats(medicines, logs, 7);
@@ -346,6 +410,8 @@ const TodayView: React.FC<Props> = ({ medicines, logs, onMark, onEditLog, onRemo
         </div>
       )}
 
+      {vitalsSection}
+
       {editing && (
         <EditDoseModal
           dose={editing}
@@ -354,6 +420,7 @@ const TodayView: React.FC<Props> = ({ medicines, logs, onMark, onEditLog, onRemo
           onClose={() => setEditing(null)}
         />
       )}
+      {vitalsModals}
     </div>
   );
 };

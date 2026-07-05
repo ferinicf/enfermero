@@ -224,6 +224,27 @@ const MedicineForm: React.FC<Props> = ({ initial, onSave, onCancel }) => {
             <input value={doctor} onChange={e => setDoctor(e.target.value)} placeholder="Ej. Dra. García" className={field} />
           </div>
 
+          <div>
+            <label className={label}>¿Para qué sirve? (el asistente usa esto para encontrarla)</label>
+            <input
+              value={purpose}
+              onChange={e => setPurpose(e.target.value)}
+              placeholder="Ej. para las náuseas y el mareo"
+              className={field}
+            />
+          </div>
+
+          <div>
+            <label className={label}>Explicación (opcional)</label>
+            <textarea
+              value={description}
+              onChange={e => setDescription(e.target.value)}
+              placeholder="Qué es y cómo actúa, en palabras sencillas"
+              rows={3}
+              className={`${field} resize-none`}
+            />
+          </div>
+
           <div className="bg-slate-50 rounded-xl p-3">
             <label className="flex items-center gap-3 cursor-pointer">
               <input
@@ -258,15 +279,8 @@ const MedicineForm: React.FC<Props> = ({ initial, onSave, onCancel }) => {
               className="w-full bg-medi-mint text-medi-dark font-extrabold py-3 rounded-xl flex items-center justify-center gap-2 disabled:opacity-60"
             >
               {loadingInfo ? <Loader2 className="w-5 h-5 animate-spin" /> : <Sparkles className="w-5 h-5" />}
-              {loadingInfo ? 'Consultando...' : 'Explicar esta medicina con IA'}
+              {loadingInfo ? 'Consultando...' : 'Llenar la explicación con IA'}
             </button>
-          )}
-
-          {purpose && (
-            <div className="bg-slate-50 rounded-xl p-3 text-sm font-semibold text-slate-600 space-y-1">
-              <p><strong>Para qué sirve:</strong> {purpose}</p>
-              {description && <p>{description}</p>}
-            </div>
           )}
 
           {error && <p className="text-medi-red font-bold text-sm">{error}</p>}

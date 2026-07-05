@@ -69,17 +69,31 @@ Para que toda la familia vea las mismas medicinas y quién marcó cada toma (en 
      updated_at timestamptz not null default now()
    );
 
+   create table vitals (
+     id text primary key,
+     data jsonb not null,
+     updated_at timestamptz not null default now()
+   );
+
    -- Acceso abierto con la clave anónima (app de uso familiar/privado).
    -- Si se quiere más seguridad, activar RLS con autenticación de Supabase.
    alter table medicines enable row level security;
    alter table dose_logs enable row level security;
+   alter table vitals enable row level security;
    create policy "familia medicines" on medicines for all using (true) with check (true);
    create policy "familia dose_logs" on dose_logs for all using (true) with check (true);
+   create policy "familia vitals" on vitals for all using (true) with check (true);
 
    -- Tiempo real: que los demás teléfonos se enteren de los cambios al instante
    alter publication supabase_realtime add table medicines;
    alter publication supabase_realtime add table dose_logs;
+   alter publication supabase_realtime add table vitals;
    ```
+
+   > **¿Ya tenías la base creada de antes?** Solo falta la tabla de signos
+   > vitales: ejecuta únicamente las líneas de `vitals` de arriba (create
+   > table + enable row level security + policy + realtime). Mientras no
+   > exista, los signos vitales se guardan solo en cada teléfono.
 
 3. Copiar la URL del proyecto y la clave `anon` (Settings → API) al `.env.local`:
 

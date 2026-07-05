@@ -6,9 +6,11 @@ import {
 } from '../utils';
 import { fetchMedicineInfo, hasApiKey } from '../services/geminiService';
 import InteractionsCard from './InteractionsCard';
+import AssistantModal from './AssistantModal';
 import {
   Camera, PlusCircle, Pencil, Trash2, X, Clock, CalendarDays,
   Stethoscope, Package, Sparkles, Loader2, AlertTriangle, Utensils, Info,
+  Bot, ChevronRight,
 } from 'lucide-react';
 
 interface Props {
@@ -197,6 +199,7 @@ const MedicineDetail: React.FC<{
 
 const MedicinesView: React.FC<Props> = ({ medicines, onEdit, onDelete, onUpdate, onAddManual, onGoScan }) => {
   const [detailId, setDetailId] = useState<string | null>(null);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const today = todayStr();
   const detail = medicines.find(m => m.id === detailId) || null;
 
@@ -299,6 +302,22 @@ const MedicinesView: React.FC<Props> = ({ medicines, onEdit, onDelete, onUpdate,
         </div>
       )}
 
+      {medicines.length > 0 && (
+        <button
+          onClick={() => setAssistantOpen(true)}
+          className="w-full text-left bg-medi-dark text-white rounded-2xl p-4 shadow-lg flex items-center gap-3 active:scale-[0.98] transition-transform"
+        >
+          <span className="w-11 h-11 rounded-xl bg-white/15 flex items-center justify-center shrink-0">
+            <Bot className="w-6 h-6" />
+          </span>
+          <span className="flex-1 min-w-0">
+            <span className="font-extrabold block leading-tight">Pregúntale al asistente</span>
+            <span className="text-sm font-semibold opacity-80">Ej. «¿qué hay para la náusea?»</span>
+          </span>
+          <ChevronRight className="w-5 h-5 opacity-60 shrink-0" />
+        </button>
+      )}
+
       <InteractionsCard activeMedicines={activeMeds} />
 
       {activeMeds.length > 0 && (
@@ -312,6 +331,14 @@ const MedicinesView: React.FC<Props> = ({ medicines, onEdit, onDelete, onUpdate,
           <h3 className="font-extrabold text-slate-400 uppercase text-sm tracking-wide pt-2">Tratamientos terminados</h3>
           {finishedMeds.map(med => <MedCard key={med.id} med={med} finished />)}
         </div>
+      )}
+
+      {assistantOpen && (
+        <AssistantModal
+          medicines={medicines}
+          onClose={() => setAssistantOpen(false)}
+          onSelect={medId => { setAssistantOpen(false); setDetailId(medId); }}
+        />
       )}
 
       {detail && (

@@ -1,5 +1,5 @@
 import { getSupabase, isSyncEnabled } from '../supabaseClient';
-import { Medicine, DoseLog } from '../types';
+import { Medicine, DoseLog, VitalLog } from '../types';
 
 /**
  * Sincronización del "modo familiar" con Supabase.
@@ -24,20 +24,27 @@ import { Medicine, DoseLog } from '../types';
 export interface RemoteData {
   medicines: Medicine[];
   logs: DoseLog[];
+  /** null = la tabla `vitals` aún no existe en esta base (ver README); no tocar lo local */
+  vitals: VitalLog[] | null;
 }
 
 export const fetchRemote = async (): Promise<RemoteData | null> => {
   const supabase = getSupabase();
   if (!supabase) return null;
-  const [meds, logs] = await Promise.all([
+  const [meds, logs, vits] = await Promise.all([
     supabase.from('medicines').select('data'),
     supabase.from('dose_logs').select('data'),
+    supabase.from('vitals').select('data'),
   ]);
   if (meds.error) throw meds.error;
   if (logs.error) throw logs.error;
+  if (vits.error) {
+    console.warn('Sync: la tabla `vitals` no está disponible (los signos vitales quedan solo en este teléfono). SQL para crearla en el README.', vits.error.message);
+  }
   return {
     medicines: (meds.data ?? []).map(r => r.data as Medicine),
     logs: (logs.data ?? []).map(r => r.data as DoseLog),
+    vitals: vits.error ? null : (vits.data ?? []).map(r => r.data as VitalLog),
   };
 };
 
@@ -75,8 +82,24 @@ export const removeLog = async (id: string): Promise<void> => {
   if (error) console.error('Sync: error eliminando toma', error);
 };
 
+export const pushVital = async (vital: VitalLog): Promise<void> => {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  const { error } = await supabase
+    .from('vitals')
+    .upsert({ id: vital.id, data: vital, updated_at: new Date().toISOString() });
+  if (error) console.warn('Sync: no se pudo subir el signo vital (¿existe la tabla `vitals`?)', error.message);
+};
+
+export const removeVital = async (id: string): Promise<void> => {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  const { error } = await supabase.from('vitals').delete().eq('id', id);
+  if (error) console.warn('Sync: no se pudo eliminar el signo vital', error.message);
+};
+
 /** Sube todo el estado local (primer arranque con la nube vacía) */
-export const pushAll = async (medicines: Medicine[], logs: DoseLog[]): Promise<void> => {
+export const pushAll = async (medicines: Medicine[], logs: DoseLog[], vitals: VitalLog[] = []): Promise<void> => {
   const supabase = getSupabase();
   if (!supabase) return;
   const now = new Date().toISOString();
@@ -91,6 +114,12 @@ export const pushAll = async (medicines: Medicine[], logs: DoseLog[]): Promise<v
       .from('dose_logs')
       .upsert(logs.map(l => ({ id: l.id, data: l, updated_at: now })));
     if (error) console.error('Sync: error subiendo tomas locales', error);
+  }
+  if (vitals.length > 0) {
+    const { error } = await supabase
+      .from('vitals')
+      .upsert(vitals.map(v => ({ id: v.id, data: v, updated_at: now })));
+    if (error) console.warn('Sync: no se pudieron subir los signos vitales locales (¿existe la tabla `vitals`?)', error.message);
   }
 };
 
@@ -110,6 +139,7 @@ export const subscribeToChanges = (onRemoteChange: () => void): (() => void) => 
     .channel('meditrack-family')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'medicines' }, debounced)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'dose_logs' }, debounced)
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'vitals' }, debounced)
     .subscribe();
   return () => {
     if (timer) clearTimeout(timer);

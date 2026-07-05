@@ -1,7 +1,8 @@
-import { Medicine, DoseLog, CachedInteractionReport } from './types';
+import { Medicine, DoseLog, VitalLog, CachedInteractionReport } from './types';
 
 const MEDS_KEY = 'meditrack.medicines.v1';
 const LOGS_KEY = 'meditrack.logs.v1';
+const VITALS_KEY = 'meditrack.vitals.v1';
 const INTERACTIONS_KEY = 'meditrack.interactions.v1';
 
 export const loadMedicines = (): Medicine[] => {
@@ -44,6 +45,24 @@ export const saveLogs = (logs: DoseLog[]): void => {
     localStorage.setItem(LOGS_KEY, JSON.stringify(logs));
   } catch (e) {
     console.error('Error guardando historial:', e);
+  }
+};
+
+export const loadVitals = (): VitalLog[] => {
+  try {
+    const raw = localStorage.getItem(VITALS_KEY);
+    return raw ? (JSON.parse(raw) as VitalLog[]) : [];
+  } catch (e) {
+    console.error('Error leyendo signos vitales de localStorage:', e);
+    return [];
+  }
+};
+
+export const saveVitals = (vitals: VitalLog[]): void => {
+  try {
+    localStorage.setItem(VITALS_KEY, JSON.stringify(vitals));
+  } catch (e) {
+    console.error('Error guardando signos vitales:', e);
   }
 };
 

@@ -34,6 +34,23 @@ export interface DoseLog {
   by?: string;       // quién lo registró (modo familiar)
 }
 
+/** Registro diario de signos vitales (todos los valores son opcionales) */
+export interface VitalLog {
+  id: string;
+  date: string;              // YYYY-MM-DD (fecha local)
+  time: string;              // hora "HH:MM"
+  systolic: number | null;   // presión alta (mmHg)
+  diastolic: number | null;  // presión baja (mmHg)
+  heartRate: number | null;  // pulso (latidos por minuto)
+  temperature: number | null;// temperatura (°C)
+  oxygen: number | null;     // saturación de oxígeno (%)
+  glucose: number | null;    // glucosa (mg/dL)
+  weight: number | null;     // peso (kg)
+  notes: string;
+  by?: string;               // quién lo registró (modo familiar)
+  createdAt: string;
+}
+
 export interface FamilyEvent {
   id: string;
   at: string;        // timestamp ISO

@@ -1,5 +1,5 @@
 import { GoogleGenAI, Type } from '@google/genai';
-import { ExtractedPrescription, MedicineInfo, InteractionReport } from '../types';
+import { ExtractedPrescription, MedicineInfo, InteractionReport, Medicine } from '../types';
 import { getConfig } from '../config';
 
 export const hasApiKey = (): boolean => Boolean(getConfig().geminiKey);
@@ -108,6 +108,53 @@ Si el nombre no corresponde a un medicamento conocido, dilo claramente en descri
   const text = response.text;
   if (!text) throw new Error('La IA no devolvió respuesta');
   return JSON.parse(text) as MedicineInfo;
+};
+
+const assistantSchema = {
+  type: Type.OBJECT,
+  properties: {
+    answer: {
+      type: Type.STRING,
+      description: 'Respuesta breve y sencilla en español (2-4 frases) sobre qué medicinas registradas sirven para lo que se pregunta, o que no hay ninguna.',
+    },
+    medicineIds: {
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
+      description: 'Los id de las medicinas de la lista que responden a la pregunta. Vacío si ninguna aplica.',
+    },
+  },
+  required: ['answer', 'medicineIds'],
+};
+
+export interface AssistantReply {
+  answer: string;
+  medicineIds: string[];
+}
+
+/** Asistente: responde preguntas sobre las medicinas registradas ("¿qué hay para la náusea?") */
+export const askAboutMedicines = async (question: string, medicines: Medicine[]): Promise<AssistantReply> => {
+  const list = medicines.map(m =>
+    `- id: ${m.id} | nombre: ${m.name} | dosis: ${m.dose} | para qué sirve: ${m.purpose || 'sin explicación'} | detalle: ${m.description || '—'} | indicaciones: ${m.instructions || '—'} | ${m.asNeeded ? 'se toma solo si hay síntomas' : `horarios: ${m.times.join(', ')}`}`
+  ).join('\n');
+  const response = await getAI().models.generateContent({
+    model: MODEL,
+    contents: `Eres el asistente de una app familiar de medicinas para un adulto mayor. Estas son las medicinas registradas en la app:
+${list}
+
+Pregunta de la familia: "${question}"
+
+Responde SOLO con base en la lista de arriba (sobre todo el campo "para qué sirve" y "detalle"):
+- answer: en español sencillo, di qué medicina(s) de la lista sirven para lo que preguntan y cómo se toman (dosis y si es con horario o solo si hay síntomas). Si ninguna de la lista sirve para eso, dilo claramente y recomienda consultar al médico; NO recomiendes medicamentos que no estén en la lista.
+- medicineIds: los id exactos de las medicinas de la lista que mencionaste. Vacío si ninguna.`,
+    config: {
+      responseMimeType: 'application/json',
+      responseSchema: assistantSchema,
+    },
+  });
+
+  const text = response.text;
+  if (!text) throw new Error('La IA no devolvió respuesta');
+  return JSON.parse(text) as AssistantReply;
 };
 
 const interactionSchema = {

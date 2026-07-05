@@ -1,4 +1,4 @@
-import { Medicine, DoseLog, ScheduledDose } from './types';
+import { Medicine, DoseLog, ScheduledDose, VitalLog } from './types';
 
 export const MED_COLORS = [
   '#0D9488', '#7C3AED', '#DB2777', '#EA580C',
@@ -185,6 +185,20 @@ export const defaultTimesFor = (timesPerDay: number): string[] => {
       );
     }
   }
+};
+
+/** Resumen legible de un registro de signos vitales, ej. "Presión 120/80 · Pulso 72" */
+export const vitalSummary = (v: VitalLog): string => {
+  const parts: string[] = [];
+  if (v.systolic !== null || v.diastolic !== null) {
+    parts.push(`Presión ${v.systolic ?? '—'}/${v.diastolic ?? '—'}`);
+  }
+  if (v.heartRate !== null) parts.push(`Pulso ${v.heartRate}`);
+  if (v.temperature !== null) parts.push(`Temp ${v.temperature}°`);
+  if (v.oxygen !== null) parts.push(`Oxígeno ${v.oxygen}%`);
+  if (v.glucose !== null) parts.push(`Glucosa ${v.glucose}`);
+  if (v.weight !== null) parts.push(`Peso ${v.weight} kg`);
+  return parts.join(' · ');
 };
 
 /** Comprime una imagen a JPEG con lado máximo dado; devuelve dataURL */

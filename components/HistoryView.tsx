@@ -1,22 +1,30 @@
 import React, { useState } from 'react';
-import { Medicine, DoseLog, ScheduledDose } from '../types';
+import { Medicine, DoseLog, ScheduledDose, VitalLog } from '../types';
 import {
   adherenceStats, dosesForDate, todayStr, addDays, nowHM,
-  formatTime12, formatDateLong,
+  formatTime12, formatDateLong, vitalSummary,
 } from '../utils';
 import EditDoseModal from './EditDoseModal';
-import { Check, X, HelpCircle, TrendingUp, Pencil } from 'lucide-react';
+import VitalsForm, { VitalDraft } from './VitalsForm';
+import { Check, X, HelpCircle, TrendingUp, Pencil, HeartPulse } from 'lucide-react';
 
 interface Props {
   medicines: Medicine[];
   logs: DoseLog[];
+  vitals: VitalLog[];
   onMark: (medicineId: string, date: string, time: string, status: 'taken' | 'skipped', givenTime?: string) => void;
   onEditLog: (log: DoseLog, status: 'taken' | 'skipped', givenTime: string) => void;
   onRemoveLog: (log: DoseLog) => void;
+  onSaveVital: (draft: VitalDraft, existingId?: string) => void;
+  onDeleteVital: (id: string) => void;
 }
 
-const HistoryView: React.FC<Props> = ({ medicines, logs, onMark, onEditLog, onRemoveLog }) => {
+const HistoryView: React.FC<Props> = ({
+  medicines, logs, vitals, onMark, onEditLog, onRemoveLog, onSaveVital, onDeleteVital,
+}) => {
   const [editing, setEditing] = useState<ScheduledDose | null>(null);
+  const [vitalsOpen, setVitalsOpen] = useState(false);
+  const [editingVital, setEditingVital] = useState<VitalLog | null>(null);
   const today = todayStr();
   const now = nowHM();
   const stats = adherenceStats(medicines, logs, 7);
@@ -33,7 +41,7 @@ const HistoryView: React.FC<Props> = ({ medicines, logs, onMark, onEditLog, onRe
     setEditing(null);
   };
 
-  if (medicines.length === 0) {
+  if (medicines.length === 0 && vitals.length === 0) {
     return (
       <div className="text-center py-16 px-6">
         <div className="text-5xl mb-3">📈</div>
@@ -47,9 +55,18 @@ const HistoryView: React.FC<Props> = ({ medicines, logs, onMark, onEditLog, onRe
 
   return (
     <div className="space-y-4">
-      <h2 className="text-2xl font-extrabold text-slate-800">Historial</h2>
+      <div className="flex items-center justify-between">
+        <h2 className="text-2xl font-extrabold text-slate-800">Historial</h2>
+        <button
+          onClick={() => setVitalsOpen(true)}
+          className="bg-rose-50 text-rose-600 font-bold text-sm px-4 py-2.5 rounded-xl flex items-center gap-2 active:scale-95"
+        >
+          <HeartPulse className="w-4 h-4" /> Signos vitales
+        </button>
+      </div>
 
       {/* Resumen de adherencia */}
+      {medicines.length > 0 && (
       <div className="bg-white rounded-2xl p-5 shadow-sm">
         <p className="font-extrabold text-slate-400 text-xs uppercase tracking-wide flex items-center gap-2 mb-3">
           <TrendingUp className="w-4 h-4" /> Cumplimiento — últimos 7 días
@@ -79,11 +96,15 @@ const HistoryView: React.FC<Props> = ({ medicines, logs, onMark, onEditLog, onRe
           Toca cualquier toma para corregirla: cambiar la hora, marcarla o quitar el registro.
         </p>
       </div>
+      )}
 
       {/* Detalle por día */}
       {days.map(date => {
         const doses = dosesForDate(medicines, logs, date);
-        if (doses.length === 0) return null;
+        const dayVitals = vitals
+          .filter(v => v.date === date)
+          .sort((a, b) => a.time.localeCompare(b.time));
+        if (doses.length === 0 && dayVitals.length === 0) return null;
         return (
           <div key={date} className="bg-white rounded-2xl p-4 shadow-sm">
             <p className="font-extrabold text-slate-700 mb-3">
@@ -130,6 +151,27 @@ const HistoryView: React.FC<Props> = ({ medicines, logs, onMark, onEditLog, onRe
                   </button>
                 );
               })}
+
+              {dayVitals.map(v => (
+                <button
+                  key={v.id}
+                  onClick={() => setEditingVital(v)}
+                  className="w-full text-left flex items-center gap-3 rounded-xl p-1.5 -m-1.5 active:bg-slate-50"
+                >
+                  <span className="w-8 h-8 rounded-full bg-rose-50 text-rose-500 flex items-center justify-center shrink-0">
+                    <HeartPulse className="w-4 h-4" />
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <p className="font-bold text-slate-700 truncate">{vitalSummary(v) || 'Nota'}</p>
+                    <p className="text-xs font-semibold text-slate-400">
+                      Signos vitales {formatTime12(v.time)}
+                      {v.by ? ` por ${v.by}` : ''}
+                      {v.notes ? ` · ${v.notes}` : ''}
+                    </p>
+                  </div>
+                  <Pencil className="w-4 h-4 text-slate-300 shrink-0" />
+                </button>
+              ))}
             </div>
           </div>
         );
@@ -141,6 +183,15 @@ const HistoryView: React.FC<Props> = ({ medicines, logs, onMark, onEditLog, onRe
           onSave={saveModal}
           onRemove={editing.log ? () => { onRemoveLog(editing.log!); setEditing(null); } : undefined}
           onClose={() => setEditing(null)}
+        />
+      )}
+
+      {(vitalsOpen || editingVital) && (
+        <VitalsForm
+          initial={editingVital}
+          onSave={onSaveVital}
+          onDelete={editingVital ? onDeleteVital : undefined}
+          onClose={() => { setVitalsOpen(false); setEditingVital(null); }}
         />
       )}
     </div>

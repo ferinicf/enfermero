@@ -1,14 +1,16 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { View, Medicine, DoseLog } from './types';
+import { View, Medicine, DoseLog, VitalLog } from './types';
 import {
-  loadMedicines, saveMedicines, loadLogs, saveLogs,
+  loadMedicines, saveMedicines, loadLogs, saveLogs, loadVitals, saveVitals,
   loadProfileName, saveProfileName, loadAlertsSeenAt, saveAlertsSeenAt,
 } from './storage';
 import { uid, todayStr, nowHM, minutesUntil, doseKey, dosesForDate, MED_COLORS, formatTime12 } from './utils';
 import {
   isSyncEnabled, fetchRemote, pushMedicine, removeMedicine as removeRemoteMedicine,
-  pushLog, removeLog as removeRemoteLog, pushAll, subscribeToChanges,
+  pushLog, removeLog as removeRemoteLog, pushVital, removeVital as removeRemoteVital,
+  pushAll, subscribeToChanges,
 } from './services/syncService';
+import { VitalDraft } from './components/VitalsForm';
 import Header, { SyncStatus } from './components/Header';
 import TodayView from './components/TodayView';
 import MedicinesView from './components/MedicinesView';
@@ -58,6 +60,7 @@ const App: React.FC = () => {
   const [view, setView] = useState<View>('today');
   const [medicines, setMedicines] = useState<Medicine[]>(() => loadMedicines());
   const [logs, setLogs] = useState<DoseLog[]>(() => loadLogs());
+  const [vitals, setVitals] = useState<VitalLog[]>(() => loadVitals());
   const [editingMedicine, setEditingMedicine] = useState<Medicine | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
   const [syncStatus, setSyncStatus] = useState<SyncStatus>(isSyncEnabled() ? 'connecting' : 'off');
@@ -77,6 +80,7 @@ const App: React.FC = () => {
 
   useEffect(() => { saveMedicines(medicines); }, [medicines]);
   useEffect(() => { saveLogs(logs); }, [logs]);
+  useEffect(() => { saveVitals(vitals); }, [vitals]);
 
   const showToast = useCallback((text: string) => {
     const toast = { id: uid(), text };
@@ -103,7 +107,7 @@ const App: React.FC = () => {
     }
     setSyncStatus('connecting');
 
-    const applyRemote = (remoteMeds: Medicine[], remoteLogs: DoseLog[], announce: boolean) => {
+    const applyRemote = (remoteMeds: Medicine[], remoteLogs: DoseLog[], remoteVitals: VitalLog[] | null, announce: boolean) => {
       if (announce) {
         // Avisa dentro de la app de las tomas nuevas registradas por otros
         const medName = new Map(remoteMeds.map(m => [m.id, m.name]));
@@ -121,13 +125,15 @@ const App: React.FC = () => {
       knownLogIdsRef.current = new Set(remoteLogs.map(l => l.id));
       setMedicines(remoteMeds);
       setLogs(remoteLogs);
+      // Si la tabla vitals no existe en la nube, los signos vitales quedan solo locales
+      if (remoteVitals) setVitals(remoteVitals);
     };
 
     const refresh = async (announce: boolean) => {
       try {
         const remote = await fetchRemote();
         if (!remote) return;
-        applyRemote(remote.medicines, remote.logs, announce);
+        applyRemote(remote.medicines, remote.logs, remote.vitals, announce);
         setSyncStatus('online');
       } catch (e) {
         console.error('Sync: error consultando la nube', e);
@@ -141,9 +147,9 @@ const App: React.FC = () => {
         if (!remote) return;
         if (remote.medicines.length === 0 && remote.logs.length === 0) {
           // Nube vacía: sube lo que ya había en este teléfono
-          await pushAll(loadMedicines(), loadLogs());
+          await pushAll(loadMedicines(), loadLogs(), loadVitals());
         } else {
-          applyRemote(remote.medicines, remote.logs, false);
+          applyRemote(remote.medicines, remote.logs, remote.vitals, false);
         }
         setSyncStatus('online');
       } catch (e) {
@@ -260,6 +266,26 @@ const App: React.FC = () => {
     if (log.status === 'taken') adjustStock(log.medicineId, 1);
   }, [adjustStock]);
 
+  /** Guarda un registro de signos vitales (nuevo o corrección de uno existente) */
+  const saveVital = useCallback((draft: VitalDraft, existingId?: string) => {
+    setVitals(prev => {
+      const existing = existingId ? prev.find(v => v.id === existingId) : undefined;
+      const vital: VitalLog = {
+        ...draft,
+        id: existing?.id ?? uid(),
+        by: profileRef.current || existing?.by || undefined,
+        createdAt: existing?.createdAt ?? new Date().toISOString(),
+      };
+      pushVital(vital);
+      return [...prev.filter(v => v.id !== vital.id), vital];
+    });
+  }, []);
+
+  const deleteVital = useCallback((id: string) => {
+    setVitals(prev => prev.filter(v => v.id !== id));
+    removeRemoteVital(id);
+  }, []);
+
   const familyEvents = useMemo(() => buildFamilyEvents(medicines, logs), [medicines, logs]);
   const unreadCount = useMemo(
     () => familyEvents.filter(ev => !alertsSeenAt || ev.at > alertsSeenAt).length,
@@ -315,9 +341,12 @@ const App: React.FC = () => {
           <TodayView
             medicines={medicines}
             logs={logs}
+            vitals={vitals}
             onMark={markDose}
             onEditLog={editDoseLog}
             onRemoveLog={removeDoseLog}
+            onSaveVital={saveVital}
+            onDeleteVital={deleteVital}
             onGoScan={() => setView('scan')}
           />
         )}
@@ -352,9 +381,12 @@ const App: React.FC = () => {
           <HistoryView
             medicines={medicines}
             logs={logs}
+            vitals={vitals}
             onMark={markDose}
             onEditLog={editDoseLog}
             onRemoveLog={removeDoseLog}
+            onSaveVital={saveVital}
+            onDeleteVital={deleteVital}
           />
         )}
       </main>
