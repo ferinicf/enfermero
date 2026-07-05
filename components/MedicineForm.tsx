@@ -16,7 +16,10 @@ const MedicineForm: React.FC<Props> = ({ initial, onSave, onCancel }) => {
   const [name, setName] = useState(initial?.name ?? '');
   const [dose, setDose] = useState(initial?.dose ?? '');
   const [presentation, setPresentation] = useState(initial?.presentation ?? 'tableta');
-  const [times, setTimes] = useState<string[]>(initial?.times ?? ['08:00']);
+  const [asNeeded, setAsNeeded] = useState(initial?.asNeeded ?? false);
+  const [times, setTimes] = useState<string[]>(
+    initial && initial.times.length > 0 ? initial.times : ['08:00']
+  );
   const [startDate, setStartDate] = useState(initial?.startDate ?? todayStr());
   const [durationDays, setDurationDays] = useState(initial?.durationDays ?? 7);
   const [instructions, setInstructions] = useState(initial?.instructions ?? '');
@@ -31,6 +34,12 @@ const MedicineForm: React.FC<Props> = ({ initial, onSave, onCancel }) => {
   const [error, setError] = useState('');
 
   const setTimesPerDay = (n: number) => setTimes(defaultTimesFor(n));
+
+  const toggleAsNeeded = (checked: boolean) => {
+    setAsNeeded(checked);
+    // Una medicina por síntomas suele ser de uso continuo; solo al crearla nueva
+    if (checked && !initial) setDurationDays(0);
+  };
 
   const loadInfo = async () => {
     if (!name.trim()) {
@@ -58,7 +67,7 @@ const MedicineForm: React.FC<Props> = ({ initial, onSave, onCancel }) => {
       setError('El nombre de la medicina es obligatorio.');
       return;
     }
-    if (times.length === 0) {
+    if (!asNeeded && times.length === 0) {
       setError('Agrega al menos un horario de toma.');
       return;
     }
@@ -66,7 +75,8 @@ const MedicineForm: React.FC<Props> = ({ initial, onSave, onCancel }) => {
       name: name.trim(),
       dose: dose.trim() || '1 dosis',
       presentation,
-      times: [...new Set(times)].sort(),
+      asNeeded,
+      times: asNeeded ? [] : [...new Set(times)].sort(),
       startDate,
       durationDays: Math.max(0, durationDays),
       instructions: instructions.trim(),
@@ -115,6 +125,25 @@ const MedicineForm: React.FC<Props> = ({ initial, onSave, onCancel }) => {
             </div>
           </div>
 
+          <div className="bg-medi-light rounded-xl p-3">
+            <label className="flex items-center gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={asNeeded}
+                onChange={e => toggleAsNeeded(e.target.checked)}
+                className="w-5 h-5 accent-teal-700"
+              />
+              <span className="font-bold text-medi-dark">Solo cuando se necesite (si hay síntomas)</span>
+            </label>
+            {asNeeded && (
+              <p className="text-[11px] text-slate-500 font-semibold mt-1.5">
+                Sin horarios fijos ni recordatorios: se registra cada vez que se dé.
+                Por ejemplo, para el hipo, dolor o náuseas.
+              </p>
+            )}
+          </div>
+
+          {!asNeeded && (
           <div>
             <label className={label}>¿Cuántas veces al día?</label>
             <div className="flex gap-2 mt-1">
@@ -131,7 +160,9 @@ const MedicineForm: React.FC<Props> = ({ initial, onSave, onCancel }) => {
               ))}
             </div>
           </div>
+          )}
 
+          {!asNeeded && (
           <div>
             <label className={label}>Horarios</label>
             <div className="flex flex-wrap gap-2 mt-1">
@@ -158,6 +189,7 @@ const MedicineForm: React.FC<Props> = ({ initial, onSave, onCancel }) => {
               </button>
             </div>
           </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>

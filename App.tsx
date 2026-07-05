@@ -41,6 +41,14 @@ const systemNotify = async (title: string, body: string, tag: string) => {
   }
 };
 
+/** Timestamp ISO para una toma dada el día `date` a la hora local `hm` (o ahora mismo) */
+const takenAtISO = (date: string, hm?: string): string => {
+  if (!hm) return new Date().toISOString();
+  const [y, m, d] = date.split('-').map(Number);
+  const [h, min] = hm.split(':').map(Number);
+  return new Date(y, m - 1, d, h, min).toISOString();
+};
+
 interface Toast {
   id: string;
   text: string;
@@ -202,50 +210,55 @@ const App: React.FC = () => {
     removeRemoteMedicine(id);
   }, []);
 
-  const markDose = useCallback((medicineId: string, date: string, time: string, status: 'taken' | 'skipped') => {
+  const adjustStock = useCallback((medicineId: string, delta: number) => {
+    if (delta === 0) return;
+    setMedicines(prev => prev.map(m => {
+      if (m.id !== medicineId || m.stock === null) return m;
+      const updated = { ...m, stock: Math.max(0, m.stock + delta) };
+      pushMedicine(updated);
+      return updated;
+    }));
+  }, []);
+
+  const markDose = useCallback((medicineId: string, date: string, time: string, status: 'taken' | 'skipped', givenTime?: string) => {
+    const existing = logs.find(l => l.medicineId === medicineId && l.date === date && l.time === time);
     const log: DoseLog = {
-      id: uid(), medicineId, date, time, status,
-      takenAt: new Date().toISOString(),
+      id: existing?.id ?? uid(),
+      medicineId, date, time, status,
+      takenAt: takenAtISO(date, givenTime),
       by: profileRef.current || undefined,
     };
     knownLogIdsRef.current.add(log.id);
-    setLogs(prev => {
-      const replaced = prev.find(l => l.medicineId === medicineId && l.date === date && l.time === time);
-      if (replaced) removeRemoteLog(replaced.id);
-      return [...prev.filter(l => !(l.medicineId === medicineId && l.date === date && l.time === time)), log];
-    });
+    setLogs(prev => [
+      ...prev.filter(l => l.id !== log.id && !(l.medicineId === medicineId && l.date === date && l.time === time)),
+      log,
+    ]);
     pushLog(log);
-    if (status === 'taken') {
-      setMedicines(prev => prev.map(m => {
-        if (m.id === medicineId && m.stock !== null && m.stock > 0) {
-          const updated = { ...m, stock: m.stock - 1 };
-          pushMedicine(updated);
-          return updated;
-        }
-        return m;
-      }));
-    }
-  }, []);
+    adjustStock(medicineId, (status === 'taken' ? -1 : 0) + (existing?.status === 'taken' ? 1 : 0));
+  }, [logs, adjustStock]);
 
-  const undoDose = useCallback((medicineId: string, date: string, time: string) => {
-    let wasTaken = false;
-    setLogs(prev => {
-      const log = prev.find(l => l.medicineId === medicineId && l.date === date && l.time === time);
-      wasTaken = log?.status === 'taken';
-      if (log) removeRemoteLog(log.id);
-      return prev.filter(l => !(l.medicineId === medicineId && l.date === date && l.time === time));
-    });
-    if (wasTaken) {
-      setMedicines(prev => prev.map(m => {
-        if (m.id === medicineId && m.stock !== null) {
-          const updated = { ...m, stock: m.stock + 1 };
-          pushMedicine(updated);
-          return updated;
-        }
-        return m;
-      }));
-    }
-  }, []);
+  /** Corrige un registro existente: estado y hora real en que se dio */
+  const editDoseLog = useCallback((orig: DoseLog, status: 'taken' | 'skipped', givenTime: string) => {
+    const med = medicines.find(m => m.id === orig.medicineId);
+    const updated: DoseLog = {
+      ...orig,
+      status,
+      // En medicinas sin horario fijo, la hora del registro ES la hora en que se dio
+      time: med?.asNeeded ? givenTime : orig.time,
+      takenAt: takenAtISO(orig.date, givenTime),
+      by: profileRef.current || orig.by,
+    };
+    knownLogIdsRef.current.add(updated.id);
+    setLogs(prev => prev.map(l => (l.id === orig.id ? updated : l)));
+    pushLog(updated);
+    adjustStock(orig.medicineId, (status === 'taken' ? -1 : 0) + (orig.status === 'taken' ? 1 : 0));
+  }, [medicines, adjustStock]);
+
+  const removeDoseLog = useCallback((log: DoseLog) => {
+    setLogs(prev => prev.filter(l => l.id !== log.id));
+    removeRemoteLog(log.id);
+    if (log.status === 'taken') adjustStock(log.medicineId, 1);
+  }, [adjustStock]);
 
   const familyEvents = useMemo(() => buildFamilyEvents(medicines, logs), [medicines, logs]);
   const unreadCount = useMemo(
@@ -303,7 +316,8 @@ const App: React.FC = () => {
             medicines={medicines}
             logs={logs}
             onMark={markDose}
-            onUndo={undoDose}
+            onEditLog={editDoseLog}
+            onRemoveLog={removeDoseLog}
             onGoScan={() => setView('scan')}
           />
         )}
@@ -334,7 +348,15 @@ const App: React.FC = () => {
           />
         )}
 
-        {view === 'history' && <HistoryView medicines={medicines} logs={logs} />}
+        {view === 'history' && (
+          <HistoryView
+            medicines={medicines}
+            logs={logs}
+            onMark={markDose}
+            onEditLog={editDoseLog}
+            onRemoveLog={removeDoseLog}
+          />
+        )}
       </main>
 
       {(showManualForm || editingMedicine) && (

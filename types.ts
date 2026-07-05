@@ -7,7 +7,8 @@ export interface Medicine {
   name: string;              // "Amoxicilina 500 mg"
   dose: string;              // "1 tableta"
   presentation: string;      // tableta, cápsula, jarabe, inyección...
-  times: string[];           // horarios en formato 24h "HH:MM"
+  times: string[];           // horarios en formato 24h "HH:MM" (vacío si asNeeded)
+  asNeeded?: boolean;        // true = solo cuando se necesite (por síntomas), sin horario fijo
   startDate: string;         // YYYY-MM-DD (fecha local)
   durationDays: number;      // 0 = uso continuo / crónico
   instructions: string;      // "tomar con alimentos", "en ayunas"...
@@ -27,9 +28,9 @@ export interface DoseLog {
   id: string;
   medicineId: string;
   date: string;      // YYYY-MM-DD del día programado
-  time: string;      // hora programada "HH:MM"
+  time: string;      // hora programada "HH:MM" (en medicinas asNeeded: hora en que se dio)
   status: 'taken' | 'skipped';
-  takenAt: string;   // timestamp ISO de cuándo se registró
+  takenAt: string;   // timestamp ISO de cuándo se dio realmente (editable)
   by?: string;       // quién lo registró (modo familiar)
 }
 

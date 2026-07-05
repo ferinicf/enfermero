@@ -108,6 +108,15 @@ export const dosesForDate = (
   const doses: ScheduledDose[] = [];
   medicines.forEach(med => {
     if (!isActiveOn(med, dateStr)) return;
+    if (med.asNeeded) {
+      // Sin horario fijo: aparecen solo las tomas que sí se registraron ese día
+      logs
+        .filter(l => l.medicineId === med.id && l.date === dateStr)
+        .forEach(log => {
+          doses.push({ medicine: med, date: dateStr, time: log.time, status: log.status, log });
+        });
+      return;
+    }
     med.times.forEach(time => {
       const log = logMap.get(doseKey(med.id, dateStr, time));
       doses.push({
@@ -130,19 +139,21 @@ export interface AdherenceStats {
   percent: number; // 0-100 sobre las tomas ya vencidas
 }
 
-/** Adherencia de los últimos `days` días (incluye hoy, solo tomas ya vencidas) */
+/** Adherencia de los últimos `days` días (incluye hoy, solo tomas ya vencidas).
+ *  Las medicinas "solo si se necesita" no cuentan: no tienen tomas esperadas. */
 export const adherenceStats = (
   medicines: Medicine[],
   logs: DoseLog[],
   days: number
 ): AdherenceStats => {
+  const scheduled = medicines.filter(m => !m.asNeeded);
   const today = todayStr();
   const now = nowHM();
   let expected = 0, taken = 0, skipped = 0;
 
   for (let i = 0; i < days; i++) {
     const date = addDays(today, -i);
-    dosesForDate(medicines, logs, date).forEach(dose => {
+    dosesForDate(scheduled, logs, date).forEach(dose => {
       // solo cuenta tomas cuya hora ya pasó
       if (date === today && dose.time > now && dose.status === 'pending') return;
       expected++;

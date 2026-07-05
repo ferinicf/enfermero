@@ -1,22 +1,37 @@
-import React from 'react';
-import { Medicine, DoseLog } from '../types';
+import React, { useState } from 'react';
+import { Medicine, DoseLog, ScheduledDose } from '../types';
 import {
   adherenceStats, dosesForDate, todayStr, addDays, nowHM,
   formatTime12, formatDateLong,
 } from '../utils';
-import { Check, X, HelpCircle, TrendingUp } from 'lucide-react';
+import EditDoseModal from './EditDoseModal';
+import { Check, X, HelpCircle, TrendingUp, Pencil } from 'lucide-react';
 
 interface Props {
   medicines: Medicine[];
   logs: DoseLog[];
+  onMark: (medicineId: string, date: string, time: string, status: 'taken' | 'skipped', givenTime?: string) => void;
+  onEditLog: (log: DoseLog, status: 'taken' | 'skipped', givenTime: string) => void;
+  onRemoveLog: (log: DoseLog) => void;
 }
 
-const HistoryView: React.FC<Props> = ({ medicines, logs }) => {
+const HistoryView: React.FC<Props> = ({ medicines, logs, onMark, onEditLog, onRemoveLog }) => {
+  const [editing, setEditing] = useState<ScheduledDose | null>(null);
   const today = todayStr();
   const now = nowHM();
   const stats = adherenceStats(medicines, logs, 7);
 
   const days = Array.from({ length: 7 }, (_, i) => addDays(today, -i));
+
+  const saveModal = (status: 'taken' | 'skipped', givenTime: string) => {
+    if (!editing) return;
+    if (editing.log) {
+      onEditLog(editing.log, status, givenTime);
+    } else {
+      onMark(editing.medicine.id, editing.date, editing.time, status, givenTime);
+    }
+    setEditing(null);
+  };
 
   if (medicines.length === 0) {
     return (
@@ -60,6 +75,9 @@ const HistoryView: React.FC<Props> = ({ medicines, logs }) => {
             🎉 ¡Excelente! El tratamiento se está siguiendo muy bien.
           </p>
         )}
+        <p className="mt-3 text-xs text-slate-400 font-semibold">
+          Toca cualquier toma para corregirla: cambiar la hora, marcarla o quitar el registro.
+        </p>
       </div>
 
       {/* Detalle por día */}
@@ -74,8 +92,16 @@ const HistoryView: React.FC<Props> = ({ medicines, logs }) => {
             <div className="space-y-2">
               {doses.map(dose => {
                 const pendingFuture = dose.status === 'pending' && date === today && dose.time > now;
+                const isPrn = !!dose.medicine.asNeeded;
                 return (
-                  <div key={`${dose.medicine.id}-${dose.time}`} className="flex items-center gap-3">
+                  <button
+                    key={dose.log?.id ?? `${dose.medicine.id}-${dose.time}`}
+                    onClick={() => !pendingFuture && setEditing(dose)}
+                    disabled={pendingFuture}
+                    className={`w-full text-left flex items-center gap-3 rounded-xl p-1.5 -m-1.5 ${
+                      pendingFuture ? '' : 'active:bg-slate-50'
+                    }`}
+                  >
                     <span
                       className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
                         dose.status === 'taken' ? 'bg-green-100 text-green-600'
@@ -91,22 +117,32 @@ const HistoryView: React.FC<Props> = ({ medicines, logs }) => {
                     <div className="flex-1 min-w-0">
                       <p className="font-bold text-slate-700 truncate">{dose.medicine.name}</p>
                       <p className="text-xs font-semibold text-slate-400">
-                        Programada {formatTime12(dose.time)}
+                        {isPrn ? 'Se necesitó' : `Programada ${formatTime12(dose.time)}`}
                         {dose.log?.status === 'taken' && (
                           <> · tomada a las {new Date(dose.log.takenAt).toLocaleTimeString('es-MX', { hour: 'numeric', minute: '2-digit' })}{dose.log.by ? ` por ${dose.log.by}` : ''}</>
                         )}
-                        {dose.log?.status === 'skipped' && dose.log.by && <> · por {dose.log.by}</>}
+                        {dose.log?.status === 'skipped' && <> · omitida{dose.log.by ? ` por ${dose.log.by}` : ''}</>}
                         {dose.status === 'pending' && !pendingFuture && ' · sin registrar'}
                         {pendingFuture && ' · pendiente'}
                       </p>
                     </div>
-                  </div>
+                    {!pendingFuture && <Pencil className="w-4 h-4 text-slate-300 shrink-0" />}
+                  </button>
                 );
               })}
             </div>
           </div>
         );
       })}
+
+      {editing && (
+        <EditDoseModal
+          dose={editing}
+          onSave={saveModal}
+          onRemove={editing.log ? () => { onRemoveLog(editing.log!); setEditing(null); } : undefined}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
   );
 };

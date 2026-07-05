@@ -1,29 +1,41 @@
 import React, { useState, useEffect } from 'react';
 import { Medicine, DoseLog, ScheduledDose } from '../types';
-import { dosesForDate, todayStr, formatTime12, minutesUntil, humanDelta, treatmentDay, formatDateLong, adherenceStats } from '../utils';
-import { Camera, Check, X, RotateCcw, Clock, AlarmClock, Utensils, Printer, PartyPopper, Share2 } from 'lucide-react';
+import {
+  dosesForDate, todayStr, nowHM, formatTime12, minutesUntil, humanDelta,
+  treatmentDay, formatDateLong, adherenceStats, isActiveOn,
+} from '../utils';
+import EditDoseModal from './EditDoseModal';
+import {
+  Camera, Check, X, Clock, AlarmClock, Utensils, Printer, PartyPopper,
+  Share2, Pencil, Plus, HeartPulse,
+} from 'lucide-react';
 
 interface Props {
   medicines: Medicine[];
   logs: DoseLog[];
-  onMark: (medicineId: string, date: string, time: string, status: 'taken' | 'skipped') => void;
-  onUndo: (medicineId: string, date: string, time: string) => void;
+  onMark: (medicineId: string, date: string, time: string, status: 'taken' | 'skipped', givenTime?: string) => void;
+  onEditLog: (log: DoseLog, status: 'taken' | 'skipped', givenTime: string) => void;
+  onRemoveLog: (log: DoseLog) => void;
   onGoScan: () => void;
 }
+
+const takenAtLabel = (log: DoseLog): string =>
+  new Date(log.takenAt).toLocaleTimeString('es-MX', { hour: 'numeric', minute: '2-digit' });
 
 const DoseRow: React.FC<{
   dose: ScheduledDose;
   isNext: boolean;
   onMark: Props['onMark'];
-  onUndo: Props['onUndo'];
-}> = ({ dose, isNext, onMark, onUndo }) => {
+  onOpenEdit: (dose: ScheduledDose) => void;
+}> = ({ dose, isNext, onMark, onOpenEdit }) => {
   const { medicine, date, time, status } = dose;
   const mins = minutesUntil(time);
   const overdue = status === 'pending' && mins < -15;
 
   return (
     <div
-      className={`bg-white rounded-2xl p-4 shadow-sm border-2 transition-all ${
+      onClick={() => onOpenEdit(dose)}
+      className={`bg-white rounded-2xl p-4 shadow-sm border-2 transition-all cursor-pointer ${
         isNext ? 'border-medi-teal ring-2 ring-medi-mint' : overdue ? 'border-red-200' : 'border-transparent'
       } ${status !== 'pending' ? 'opacity-75' : ''}`}
     >
@@ -63,13 +75,13 @@ const DoseRow: React.FC<{
         {status === 'pending' ? (
           <>
             <button
-              onClick={() => onMark(medicine.id, date, time, 'taken')}
+              onClick={e => { e.stopPropagation(); onMark(medicine.id, date, time, 'taken'); }}
               className="flex-1 bg-medi-teal text-white font-extrabold py-3 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform text-base"
             >
               <Check className="w-5 h-5" /> Ya la tomó
             </button>
             <button
-              onClick={() => onMark(medicine.id, date, time, 'skipped')}
+              onClick={e => { e.stopPropagation(); onMark(medicine.id, date, time, 'skipped'); }}
               className="px-4 bg-slate-100 text-slate-500 font-bold py-3 rounded-xl flex items-center justify-center gap-1 active:scale-95 transition-transform"
             >
               <X className="w-5 h-5" /> Omitir
@@ -87,7 +99,7 @@ const DoseRow: React.FC<{
                   <Check className="w-5 h-5" /> Tomada
                   {dose.log && (
                     <span className="text-slate-400 text-sm font-semibold">
-                      a las {new Date(dose.log.takenAt).toLocaleTimeString('es-MX', { hour: 'numeric', minute: '2-digit' })}
+                      a las {takenAtLabel(dose.log)}
                       {dose.log.by ? ` · ${dose.log.by}` : ''}
                     </span>
                   )}
@@ -100,10 +112,10 @@ const DoseRow: React.FC<{
               )}
             </span>
             <button
-              onClick={() => onUndo(medicine.id, date, time)}
-              className="text-slate-400 font-bold text-sm flex items-center gap-1 px-3 py-2 rounded-lg hover:bg-slate-100"
+              onClick={e => { e.stopPropagation(); onOpenEdit(dose); }}
+              className="text-medi-teal font-bold text-sm flex items-center gap-1 px-3 py-2 rounded-lg bg-medi-light active:scale-95"
             >
-              <RotateCcw className="w-4 h-4" /> Deshacer
+              <Pencil className="w-4 h-4" /> Cambiar
             </button>
           </div>
         )}
@@ -112,9 +124,10 @@ const DoseRow: React.FC<{
   );
 };
 
-const TodayView: React.FC<Props> = ({ medicines, logs, onMark, onUndo, onGoScan }) => {
+const TodayView: React.FC<Props> = ({ medicines, logs, onMark, onEditLog, onRemoveLog, onGoScan }) => {
   // re-render cada minuto para actualizar los contadores de tiempo
   const [, setTick] = useState(0);
+  const [editing, setEditing] = useState<ScheduledDose | null>(null);
   useEffect(() => {
     const i = setInterval(() => setTick(t => t + 1), 60000);
     return () => clearInterval(i);
@@ -122,8 +135,23 @@ const TodayView: React.FC<Props> = ({ medicines, logs, onMark, onUndo, onGoScan 
 
   const today = todayStr();
   const doses = dosesForDate(medicines, logs, today);
-  const pending = doses.filter(d => d.status === 'pending');
+  const schedDoses = doses.filter(d => !d.medicine.asNeeded);
+  const prnDoses = doses.filter(d => d.medicine.asNeeded);
+  const prnMeds = medicines.filter(m => m.asNeeded && isActiveOn(m, today));
+  const pending = schedDoses.filter(d => d.status === 'pending');
   const nextDose = pending.find(d => minutesUntil(d.time) >= -15) || pending[0];
+
+  const saveModal = (status: 'taken' | 'skipped', givenTime: string) => {
+    if (!editing) return;
+    if (editing.log) {
+      onEditLog(editing.log, status, givenTime);
+    } else if (editing.medicine.asNeeded) {
+      onMark(editing.medicine.id, editing.date, givenTime, status, givenTime);
+    } else {
+      onMark(editing.medicine.id, editing.date, editing.time, status, givenTime);
+    }
+    setEditing(null);
+  };
 
   if (medicines.length === 0) {
     return (
@@ -143,7 +171,7 @@ const TodayView: React.FC<Props> = ({ medicines, logs, onMark, onUndo, onGoScan 
     );
   }
 
-  if (doses.length === 0) {
+  if (schedDoses.length === 0 && prnMeds.length === 0) {
     return (
       <div className="text-center py-16 px-6">
         <PartyPopper className="w-14 h-14 mx-auto text-medi-teal mb-4" />
@@ -155,20 +183,24 @@ const TodayView: React.FC<Props> = ({ medicines, logs, onMark, onUndo, onGoScan 
     );
   }
 
-  const takenCount = doses.filter(d => d.status === 'taken').length;
-  const allDone = pending.length === 0;
+  const takenCount = schedDoses.filter(d => d.status === 'taken').length;
+  const allDone = schedDoses.length > 0 && pending.length === 0;
 
   const shareToday = () => {
     const lines: string[] = [`💊 *Medicinas de hoy* — ${formatDateLong(today)}`, ''];
-    doses.forEach(d => {
+    schedDoses.forEach(d => {
       const mark = d.status === 'taken' ? '✅' : d.status === 'skipped' ? '❌' : '⬜';
       const takenAt = d.log?.status === 'taken'
-        ? ` (tomada ${new Date(d.log.takenAt).toLocaleTimeString('es-MX', { hour: 'numeric', minute: '2-digit' })})`
+        ? ` (tomada ${takenAtLabel(d.log)})`
         : d.status === 'skipped' ? ' (omitida)' : '';
       const extra = d.medicine.instructions ? ` — ${d.medicine.instructions}` : '';
       lines.push(`${mark} ${formatTime12(d.time)} · ${d.medicine.name}, ${d.medicine.dose}${extra}${takenAt}`);
     });
-    lines.push('', `Completadas: ${takenCount} de ${doses.length}`);
+    prnDoses.forEach(d => {
+      if (d.status !== 'taken') return;
+      lines.push(`🆘 ${formatTime12(d.time)} · ${d.medicine.name}, ${d.medicine.dose} (se dio por síntomas)`);
+    });
+    if (schedDoses.length > 0) lines.push('', `Completadas: ${takenCount} de ${schedDoses.length}`);
     const stats = adherenceStats(medicines, logs, 7);
     if (stats.expected > 0) lines.push(`Cumplimiento últimos 7 días: ${stats.percent}%`);
     lines.push('', '— Enviado desde MediHorario');
@@ -187,7 +219,9 @@ const TodayView: React.FC<Props> = ({ medicines, logs, onMark, onUndo, onGoScan 
         <div>
           <h2 className="text-2xl font-extrabold text-slate-800">Tomas de hoy</h2>
           <p className="text-slate-500 font-bold">
-            {takenCount} de {doses.length} completadas
+            {schedDoses.length > 0
+              ? `${takenCount} de ${schedDoses.length} completadas`
+              : 'Solo medicinas por síntomas'}
           </p>
         </div>
         <div className="flex gap-2 no-print">
@@ -207,44 +241,119 @@ const TodayView: React.FC<Props> = ({ medicines, logs, onMark, onUndo, onGoScan 
         </div>
       </div>
 
-      {/* Barra de progreso del día */}
-      <div className="bg-white rounded-full h-4 shadow-inner overflow-hidden">
-        <div
-          className="bg-medi-teal h-full rounded-full transition-all duration-500"
-          style={{ width: `${doses.length ? (takenCount / doses.length) * 100 : 0}%` }}
-        />
-      </div>
-
-      {allDone ? (
-        <div className="bg-green-50 border-2 border-green-200 rounded-2xl p-5 text-center">
-          <p className="text-green-700 font-extrabold text-lg">✅ ¡Todas las tomas de hoy están registradas!</p>
-        </div>
-      ) : (
-        nextDose && (
-          <div className="bg-medi-teal text-white rounded-2xl p-4 flex items-center gap-3 shadow-lg">
-            <AlarmClock className="w-8 h-8 shrink-0" />
-            <div>
-              <p className="text-medi-mint text-sm font-bold uppercase tracking-wide">Próxima toma</p>
-              <p className="font-extrabold text-lg leading-tight">
-                {nextDose.medicine.name} · {formatTime12(nextDose.time)}
-              </p>
-              <p className="text-medi-mint font-semibold text-sm">{humanDelta(minutesUntil(nextDose.time))}</p>
-            </div>
+      {schedDoses.length > 0 && (
+        <>
+          {/* Barra de progreso del día */}
+          <div className="bg-white rounded-full h-4 shadow-inner overflow-hidden">
+            <div
+              className="bg-medi-teal h-full rounded-full transition-all duration-500"
+              style={{ width: `${(takenCount / schedDoses.length) * 100}%` }}
+            />
           </div>
-        )
+
+          {allDone ? (
+            <div className="bg-green-50 border-2 border-green-200 rounded-2xl p-5 text-center">
+              <p className="text-green-700 font-extrabold text-lg">✅ ¡Todas las tomas de hoy están registradas!</p>
+            </div>
+          ) : (
+            nextDose && (
+              <div className="bg-medi-teal text-white rounded-2xl p-4 flex items-center gap-3 shadow-lg">
+                <AlarmClock className="w-8 h-8 shrink-0" />
+                <div>
+                  <p className="text-medi-mint text-sm font-bold uppercase tracking-wide">Próxima toma</p>
+                  <p className="font-extrabold text-lg leading-tight">
+                    {nextDose.medicine.name} · {formatTime12(nextDose.time)}
+                  </p>
+                  <p className="text-medi-mint font-semibold text-sm">{humanDelta(minutesUntil(nextDose.time))}</p>
+                </div>
+              </div>
+            )
+          )}
+
+          <div className="space-y-3">
+            {schedDoses.map(dose => (
+              <DoseRow
+                key={dose.log?.id ?? `${dose.medicine.id}-${dose.time}`}
+                dose={dose}
+                isNext={!allDone && nextDose === dose}
+                onMark={onMark}
+                onOpenEdit={setEditing}
+              />
+            ))}
+          </div>
+        </>
       )}
 
-      <div className="space-y-3">
-        {doses.map(dose => (
-          <DoseRow
-            key={`${dose.medicine.id}-${dose.time}`}
-            dose={dose}
-            isNext={!allDone && nextDose === dose}
-            onMark={onMark}
-            onUndo={onUndo}
-          />
-        ))}
-      </div>
+      {/* Medicinas sin horario fijo: se registran solo cuando se necesitan */}
+      {prnMeds.length > 0 && (
+        <div className="space-y-3">
+          <h3 className="font-extrabold text-slate-400 uppercase text-sm tracking-wide pt-2 flex items-center gap-2">
+            <HeartPulse className="w-4 h-4" /> Solo si se necesita
+          </h3>
+          {prnMeds.map(med => {
+            const given = prnDoses.filter(d => d.medicine.id === med.id);
+            return (
+              <div
+                key={med.id}
+                className="bg-white rounded-2xl p-4 shadow-sm border-l-8"
+                style={{ borderLeftColor: med.color }}
+              >
+                <p className="font-extrabold text-slate-800 text-lg leading-tight">{med.name}</p>
+                <p className="text-slate-600 font-semibold">{med.dose}</p>
+                {(med.purpose || med.instructions) && (
+                  <p className="text-slate-500 text-sm font-semibold mt-0.5">
+                    {med.purpose}{med.purpose && med.instructions ? ' · ' : ''}{med.instructions}
+                  </p>
+                )}
+
+                {given.length > 0 && (
+                  <div className="flex flex-wrap gap-2 mt-3">
+                    {given.map(d => (
+                      <button
+                        key={d.log!.id}
+                        onClick={() => setEditing(d)}
+                        className={`font-bold text-sm px-3 py-2 rounded-xl flex items-center gap-1.5 active:scale-95 ${
+                          d.status === 'taken' ? 'bg-green-50 text-green-700' : 'bg-slate-100 text-slate-400'
+                        }`}
+                        title="Toca para corregir la hora o quitar el registro"
+                      >
+                        {d.status === 'taken' ? <Check className="w-4 h-4" /> : <X className="w-4 h-4" />}
+                        {formatTime12(d.time)}
+                        <Pencil className="w-3.5 h-3.5 opacity-60" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+
+                <div className="mt-3 flex gap-2">
+                  <button
+                    onClick={() => onMark(med.id, today, nowHM(), 'taken')}
+                    className="flex-1 bg-medi-teal text-white font-extrabold py-3 rounded-xl flex items-center justify-center gap-2 active:scale-95 transition-transform"
+                  >
+                    <Plus className="w-5 h-5" /> Se la dio ahora
+                  </button>
+                  <button
+                    onClick={() => setEditing({ medicine: med, date: today, time: nowHM(), status: 'pending' })}
+                    className="px-4 bg-slate-100 text-slate-500 font-bold py-3 rounded-xl flex items-center justify-center gap-1 active:scale-95 transition-transform"
+                    title="Registrar con otra hora"
+                  >
+                    <Clock className="w-5 h-5" /> Otra hora
+                  </button>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {editing && (
+        <EditDoseModal
+          dose={editing}
+          onSave={saveModal}
+          onRemove={editing.log ? () => { onRemoveLog(editing.log!); setEditing(null); } : undefined}
+          onClose={() => setEditing(null)}
+        />
+      )}
     </div>
   );
 };

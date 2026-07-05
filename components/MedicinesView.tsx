@@ -82,13 +82,17 @@ const MedicineDetail: React.FC<{
           <div className="grid grid-cols-2 gap-3">
             <div className="bg-medi-light rounded-xl p-3">
               <p className="text-medi-teal font-extrabold text-xs uppercase flex items-center gap-1 mb-1"><Clock className="w-4 h-4" /> Horarios</p>
-              <div className="flex flex-wrap gap-1.5">
-                {medicine.times.map(t => (
-                  <span key={t} className="bg-white text-medi-dark font-extrabold text-sm px-2.5 py-1 rounded-lg shadow-sm">
-                    {formatTime12(t)}
-                  </span>
-                ))}
-              </div>
+              {medicine.asNeeded ? (
+                <p className="font-extrabold text-medi-dark">Solo si se necesita</p>
+              ) : (
+                <div className="flex flex-wrap gap-1.5">
+                  {medicine.times.map(t => (
+                    <span key={t} className="bg-white text-medi-dark font-extrabold text-sm px-2.5 py-1 rounded-lg shadow-sm">
+                      {formatTime12(t)}
+                    </span>
+                  ))}
+                </div>
+              )}
             </div>
             <div className="bg-medi-light rounded-xl p-3">
               <p className="text-medi-teal font-extrabold text-xs uppercase flex items-center gap-1 mb-1"><CalendarDays className="w-4 h-4" /> Duración</p>
@@ -159,14 +163,17 @@ const MedicineDetail: React.FC<{
                 <p className="font-bold text-slate-700">{medicine.doctor}</p>
               </div>
             )}
-            {medicine.stock !== null && (
-              <div className={`rounded-xl p-3 ${medicine.stock <= medicine.times.length * 2 ? 'bg-red-50' : 'bg-slate-50'}`}>
-                <p className="text-slate-400 font-extrabold text-xs uppercase flex items-center gap-1 mb-0.5"><Package className="w-4 h-4" /> Quedan</p>
-                <p className={`font-extrabold ${medicine.stock <= medicine.times.length * 2 ? 'text-medi-red' : 'text-slate-700'}`}>
-                  {medicine.stock} {medicine.presentation || 'unidades'}{medicine.stock <= medicine.times.length * 2 ? ' — ¡compra más!' : ''}
-                </p>
-              </div>
-            )}
+            {medicine.stock !== null && (() => {
+              const low = medicine.stock <= Math.max(1, medicine.times.length) * 2;
+              return (
+                <div className={`rounded-xl p-3 ${low ? 'bg-red-50' : 'bg-slate-50'}`}>
+                  <p className="text-slate-400 font-extrabold text-xs uppercase flex items-center gap-1 mb-0.5"><Package className="w-4 h-4" /> Quedan</p>
+                  <p className={`font-extrabold ${low ? 'text-medi-red' : 'text-slate-700'}`}>
+                    {medicine.stock} {medicine.presentation || 'unidades'}{low ? ' — ¡compra más!' : ''}
+                  </p>
+                </div>
+              );
+            })()}
           </div>
 
           {medicine.prescriptionPhoto && (
@@ -198,7 +205,7 @@ const MedicinesView: React.FC<Props> = ({ medicines, onEdit, onDelete, onUpdate,
 
   const MedCard: React.FC<{ med: Medicine; finished?: boolean }> = ({ med, finished }) => {
     const remaining = daysRemaining(med, today);
-    const lowStock = med.stock !== null && med.stock <= med.times.length * 2;
+    const lowStock = med.stock !== null && med.stock <= Math.max(1, med.times.length) * 2;
     return (
       <button
         onClick={() => setDetailId(med.id)}
@@ -210,18 +217,26 @@ const MedicinesView: React.FC<Props> = ({ medicines, onEdit, onDelete, onUpdate,
             <p className="font-extrabold text-slate-800 text-lg leading-tight">{med.name}</p>
             {med.purpose && <p className="text-slate-500 font-semibold text-sm mt-0.5">{med.purpose}</p>}
             <div className="flex flex-wrap gap-1.5 mt-2">
-              {med.times.map(t => (
-                <span key={t} className="bg-medi-light text-medi-dark font-bold text-xs px-2 py-1 rounded-md">
-                  {formatTime12(t)}
+              {med.asNeeded ? (
+                <span className="bg-amber-50 text-amber-700 font-bold text-xs px-2 py-1 rounded-md">
+                  Solo si se necesita
                 </span>
-              ))}
+              ) : (
+                med.times.map(t => (
+                  <span key={t} className="bg-medi-light text-medi-dark font-bold text-xs px-2 py-1 rounded-md">
+                    {formatTime12(t)}
+                  </span>
+                ))
+              )}
             </div>
             <p className="text-xs font-bold text-slate-400 mt-2">
               {finished
                 ? 'Tratamiento terminado'
-                : med.durationDays > 0
-                  ? `Día ${treatmentDay(med, today)} de ${med.durationDays}${remaining === 0 ? ' · último día' : ''}`
-                  : 'Uso continuo'}
+                : med.asNeeded && med.durationDays === 0
+                  ? 'Sin horario fijo'
+                  : med.durationDays > 0
+                    ? `Día ${treatmentDay(med, today)} de ${med.durationDays}${remaining === 0 ? ' · último día' : ''}`
+                    : 'Uso continuo'}
               {lowStock && !finished && <span className="text-medi-red"> · ⚠ quedan {med.stock}</span>}
             </p>
           </div>
