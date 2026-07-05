@@ -1,18 +1,37 @@
 import React, { useState } from 'react';
-import { getConfig, saveConfig, buildConfigLink } from '../config';
-import { syncEnabled } from '../supabaseClient';
-import { X, Save, Share2, Copy, Check, KeyRound, Cloud, ExternalLink } from 'lucide-react';
+import { getConfig, saveConfig, buildConfigLink, extractConfigFromText } from '../config';
+import { isSyncEnabled } from '../supabaseClient';
+import { X, Save, Share2, Copy, Check, KeyRound, Cloud, ExternalLink, ClipboardPaste, Link2 } from 'lucide-react';
 
 interface Props {
   onClose: () => void;
+  onSaved: () => void;
 }
 
-const SettingsModal: React.FC<Props> = ({ onClose }) => {
-  const current = getConfig();
-  const [geminiKey, setGeminiKey] = useState(current.geminiKey);
-  const [supabaseUrl, setSupabaseUrl] = useState(current.supabaseUrl);
-  const [supabaseAnonKey, setSupabaseAnonKey] = useState(current.supabaseAnonKey);
+const SettingsModal: React.FC<Props> = ({ onClose, onSaved }) => {
+  const [geminiKey, setGeminiKey] = useState(() => getConfig().geminiKey);
+  const [supabaseUrl, setSupabaseUrl] = useState(() => getConfig().supabaseUrl);
+  const [supabaseAnonKey, setSupabaseAnonKey] = useState(() => getConfig().supabaseAnonKey);
+  const [pasteText, setPasteText] = useState('');
+  const [pasteMsg, setPasteMsg] = useState<'ok' | 'error' | ''>('');
+  const [savedMsg, setSavedMsg] = useState(false);
   const [copied, setCopied] = useState(false);
+
+  const applyPastedLink = (text: string) => {
+    const incoming = extractConfigFromText(text);
+    if (!incoming) {
+      setPasteMsg('error');
+      return;
+    }
+    saveConfig(incoming);
+    const cfg = getConfig();
+    setGeminiKey(cfg.geminiKey);
+    setSupabaseUrl(cfg.supabaseUrl);
+    setSupabaseAnonKey(cfg.supabaseAnonKey);
+    setPasteText('');
+    setPasteMsg('ok');
+    onSaved();
+  };
 
   const save = () => {
     saveConfig({
@@ -20,13 +39,17 @@ const SettingsModal: React.FC<Props> = ({ onClose }) => {
       supabaseUrl: supabaseUrl.trim(),
       supabaseAnonKey: supabaseAnonKey.trim(),
     });
-    // Recarga para que la conexión de Supabase se cree con los datos nuevos
-    window.location.reload();
+    onSaved();
+    setSavedMsg(true);
+    setTimeout(() => {
+      setSavedMsg(false);
+      onClose();
+    }, 1200);
   };
 
   const shareLink = async () => {
     const link = buildConfigLink();
-    const message = `Configura MediHorario en tu teléfono: solo abre este enlace y quedará listo.\n${link}`;
+    const message = `Configura MediHorario en tu teléfono: instala la app y pega este enlace en Ajustes ⚙️ → "¿Te mandaron un enlace?".\n${link}`;
     if (navigator.share) {
       try {
         await navigator.share({ text: message });
@@ -59,6 +82,43 @@ const SettingsModal: React.FC<Props> = ({ onClose }) => {
         </div>
 
         <div className="p-5 space-y-5">
+          {/* Configuración con un solo pegado — clave para iPhone instalado */}
+          <div className="bg-medi-light border-2 border-medi-mint rounded-2xl p-4 space-y-2">
+            <p className="font-extrabold text-medi-dark flex items-center gap-2">
+              <Link2 className="w-5 h-5" /> ¿Te mandaron un enlace de configuración?
+            </p>
+            <p className="text-sm font-semibold text-slate-600">
+              Pégalo aquí y la app queda lista, sin escribir claves.
+            </p>
+            <textarea
+              value={pasteText}
+              onChange={e => {
+                setPasteText(e.target.value);
+                setPasteMsg('');
+              }}
+              placeholder="Pega aquí el enlace (https://...#cfg=...)"
+              rows={2}
+              className="w-full border-2 border-white bg-white rounded-xl px-3 py-2.5 font-semibold text-slate-800 focus:border-medi-teal outline-none text-sm resize-none"
+            />
+            <button
+              onClick={() => applyPastedLink(pasteText)}
+              disabled={!pasteText.trim()}
+              className="w-full bg-medi-teal text-white font-extrabold py-3 rounded-xl flex items-center justify-center gap-2 disabled:opacity-40 active:scale-95 transition-transform"
+            >
+              <ClipboardPaste className="w-5 h-5" /> Aplicar enlace
+            </button>
+            {pasteMsg === 'ok' && (
+              <p className="text-green-700 font-extrabold text-sm flex items-center gap-1">
+                <Check className="w-4 h-4" /> ¡Configuración aplicada! Ya puedes cerrar Ajustes.
+              </p>
+            )}
+            {pasteMsg === 'error' && (
+              <p className="text-medi-red font-bold text-sm">
+                No reconocí el enlace. Verifica que lo copiaste completo (termina en letras y números, no cortado).
+              </p>
+            )}
+          </div>
+
           <div className="space-y-2">
             <p className="font-extrabold text-slate-700 flex items-center gap-2">
               <KeyRound className="w-5 h-5 text-medi-teal" /> Clave de inteligencia artificial
@@ -95,8 +155,8 @@ const SettingsModal: React.FC<Props> = ({ onClose }) => {
             </p>
             <p className="text-sm font-semibold text-slate-500">
               Conecta la base de datos para que todos los teléfonos vean lo mismo.
-              {syncEnabled
-                ? ' ✅ Conectado en este teléfono.'
+              {isSyncEnabled()
+                ? ' ✅ Conectado en este dispositivo.'
                 : ' Instrucciones para crearla (gratis) en el README del proyecto.'}
             </p>
             <div>
@@ -116,7 +176,7 @@ const SettingsModal: React.FC<Props> = ({ onClose }) => {
               <input
                 value={supabaseAnonKey}
                 onChange={e => setSupabaseAnonKey(e.target.value)}
-                placeholder="eyJ..."
+                placeholder="eyJ... o sb_publishable_..."
                 className={field}
                 autoCapitalize="off"
                 autoCorrect="off"
@@ -129,15 +189,16 @@ const SettingsModal: React.FC<Props> = ({ onClose }) => {
             onClick={save}
             className="w-full bg-medi-teal text-white font-extrabold text-lg py-3.5 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform"
           >
-            <Save className="w-5 h-5" /> Guardar y aplicar
+            {savedMsg ? <Check className="w-5 h-5" /> : <Save className="w-5 h-5" />}
+            {savedMsg ? '¡Guardado!' : 'Guardar y aplicar'}
           </button>
 
           {(geminiKey || supabaseUrl) && (
             <div className="bg-medi-light rounded-2xl p-4 space-y-2">
               <p className="font-extrabold text-medi-dark">👨‍👩‍👧 Configura a tu familia en un toque</p>
               <p className="text-sm font-semibold text-slate-600">
-                Comparte este enlace (solo con tu familia): al abrirlo en su teléfono,
-                la app queda configurada sola, sin escribir nada.
+                Comparte este enlace (solo con tu familia). Cada quien instala la app y
+                pega el enlace en su pantalla de Ajustes, en el recuadro de arriba.
               </p>
               <button
                 onClick={shareLink}

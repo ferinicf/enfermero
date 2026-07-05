@@ -1,4 +1,4 @@
-import { supabase, syncEnabled } from '../supabaseClient';
+import { getSupabase, isSyncEnabled } from '../supabaseClient';
 import { Medicine, DoseLog } from '../types';
 
 /**
@@ -27,6 +27,7 @@ export interface RemoteData {
 }
 
 export const fetchRemote = async (): Promise<RemoteData | null> => {
+  const supabase = getSupabase();
   if (!supabase) return null;
   const [meds, logs] = await Promise.all([
     supabase.from('medicines').select('data'),
@@ -41,6 +42,7 @@ export const fetchRemote = async (): Promise<RemoteData | null> => {
 };
 
 export const pushMedicine = async (med: Medicine): Promise<void> => {
+  const supabase = getSupabase();
   if (!supabase) return;
   const { error } = await supabase
     .from('medicines')
@@ -49,6 +51,7 @@ export const pushMedicine = async (med: Medicine): Promise<void> => {
 };
 
 export const removeMedicine = async (id: string): Promise<void> => {
+  const supabase = getSupabase();
   if (!supabase) return;
   const { error } = await supabase.from('medicines').delete().eq('id', id);
   if (error) console.error('Sync: error eliminando medicina', error);
@@ -57,6 +60,7 @@ export const removeMedicine = async (id: string): Promise<void> => {
 };
 
 export const pushLog = async (log: DoseLog): Promise<void> => {
+  const supabase = getSupabase();
   if (!supabase) return;
   const { error } = await supabase
     .from('dose_logs')
@@ -65,6 +69,7 @@ export const pushLog = async (log: DoseLog): Promise<void> => {
 };
 
 export const removeLog = async (id: string): Promise<void> => {
+  const supabase = getSupabase();
   if (!supabase) return;
   const { error } = await supabase.from('dose_logs').delete().eq('id', id);
   if (error) console.error('Sync: error eliminando toma', error);
@@ -72,6 +77,7 @@ export const removeLog = async (id: string): Promise<void> => {
 
 /** Sube todo el estado local (primer arranque con la nube vacía) */
 export const pushAll = async (medicines: Medicine[], logs: DoseLog[]): Promise<void> => {
+  const supabase = getSupabase();
   if (!supabase) return;
   const now = new Date().toISOString();
   if (medicines.length > 0) {
@@ -93,6 +99,7 @@ export const pushAll = async (medicines: Medicine[], logs: DoseLog[]): Promise<v
  * Devuelve la función para cancelar la suscripción.
  */
 export const subscribeToChanges = (onRemoteChange: () => void): (() => void) => {
+  const supabase = getSupabase();
   if (!supabase) return () => {};
   let timer: ReturnType<typeof setTimeout> | null = null;
   const debounced = () => {
@@ -110,4 +117,4 @@ export const subscribeToChanges = (onRemoteChange: () => void): (() => void) => 
   };
 };
 
-export { syncEnabled };
+export { isSyncEnabled };

@@ -6,7 +6,7 @@ import {
 } from './storage';
 import { uid, todayStr, nowHM, minutesUntil, doseKey, dosesForDate, MED_COLORS, formatTime12 } from './utils';
 import {
-  syncEnabled, fetchRemote, pushMedicine, removeMedicine as removeRemoteMedicine,
+  isSyncEnabled, fetchRemote, pushMedicine, removeMedicine as removeRemoteMedicine,
   pushLog, removeLog as removeRemoteLog, pushAll, subscribeToChanges,
 } from './services/syncService';
 import Header, { SyncStatus } from './components/Header';
@@ -52,7 +52,8 @@ const App: React.FC = () => {
   const [logs, setLogs] = useState<DoseLog[]>(() => loadLogs());
   const [editingMedicine, setEditingMedicine] = useState<Medicine | null>(null);
   const [showManualForm, setShowManualForm] = useState(false);
-  const [syncStatus, setSyncStatus] = useState<SyncStatus>(syncEnabled ? 'connecting' : 'off');
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>(isSyncEnabled() ? 'connecting' : 'off');
+  const [configVersion, setConfigVersion] = useState(0);
   const [profileName, setProfileName] = useState<string>(() => loadProfileName());
   const [editingProfile, setEditingProfile] = useState(false);
   const [alertsOpen, setAlertsOpen] = useState(false);
@@ -85,9 +86,14 @@ const App: React.FC = () => {
     return () => window.removeEventListener('beforeinstallprompt', handler);
   }, []);
 
-  // Modo familiar: carga inicial desde Supabase y suscripción a cambios de otros teléfonos
+  // Modo familiar: carga inicial desde Supabase y suscripción a cambios de otros
+  // teléfonos. Se rehace cuando cambia la configuración desde Ajustes (configVersion).
   useEffect(() => {
-    if (!syncEnabled) return;
+    if (!isSyncEnabled()) {
+      setSyncStatus('off');
+      return;
+    }
+    setSyncStatus('connecting');
 
     const applyRemote = (remoteMeds: Medicine[], remoteLogs: DoseLog[], announce: boolean) => {
       if (announce) {
@@ -139,7 +145,7 @@ const App: React.FC = () => {
     })();
 
     return subscribeToChanges(() => refresh(true));
-  }, [showToast]);
+  }, [configVersion, showToast]);
 
   // Pide permiso de notificaciones al iniciar (si hay medicinas registradas)
   useEffect(() => {
@@ -364,7 +370,12 @@ const App: React.FC = () => {
         <AlertsPanel events={familyEvents} seenAt={alertsSeenAt} onClose={closeAlerts} />
       )}
 
-      {settingsOpen && <SettingsModal onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && (
+        <SettingsModal
+          onClose={() => setSettingsOpen(false)}
+          onSaved={() => setConfigVersion(v => v + 1)}
+        />
+      )}
 
       {/* Banner para instalar la app en el teléfono */}
       {installEvent && !installDismissed && (

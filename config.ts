@@ -36,18 +36,36 @@ export const saveConfig = (cfg: Partial<AppConfig>): void => {
   }
 };
 
+/**
+ * Extrae la configuración de un texto que contenga un enlace familiar
+ * (#cfg=<base64>) o el base64 solo. Tolera que WhatsApp recorte el
+ * relleno (=) del final. Devuelve null si no hay nada reconocible.
+ */
+export const extractConfigFromText = (text: string): Partial<AppConfig> | null => {
+  try {
+    const match =
+      text.match(/cfg=([A-Za-z0-9+/=_-]+)/) ||
+      text.match(/(eyJ[A-Za-z0-9+/=_-]{20,})/);
+    if (!match) return null;
+    let b64 = match[1].replace(/-/g, '+').replace(/_/g, '/').replace(/=+$/, '');
+    while (b64.length % 4 !== 0) b64 += '=';
+    const incoming = JSON.parse(atob(b64)) as Partial<AppConfig>;
+    const out: Partial<AppConfig> = {};
+    if (typeof incoming.geminiKey === 'string' && incoming.geminiKey) out.geminiKey = incoming.geminiKey;
+    if (typeof incoming.supabaseUrl === 'string' && incoming.supabaseUrl) out.supabaseUrl = incoming.supabaseUrl;
+    if (typeof incoming.supabaseAnonKey === 'string' && incoming.supabaseAnonKey) out.supabaseAnonKey = incoming.supabaseAnonKey;
+    return Object.keys(out).length > 0 ? out : null;
+  } catch {
+    return null;
+  }
+};
+
 /** Aplica un enlace de configuración familiar (#cfg=<base64 JSON>) si está en la URL */
 const applyConfigFromUrl = (): void => {
   try {
-    const match = window.location.hash.match(/#cfg=([A-Za-z0-9+/=_-]+)/);
-    if (!match) return;
-    const json = atob(match[1].replace(/-/g, '+').replace(/_/g, '/'));
-    const incoming = JSON.parse(json) as Partial<AppConfig>;
-    saveConfig({
-      geminiKey: typeof incoming.geminiKey === 'string' ? incoming.geminiKey : undefined,
-      supabaseUrl: typeof incoming.supabaseUrl === 'string' ? incoming.supabaseUrl : undefined,
-      supabaseAnonKey: typeof incoming.supabaseAnonKey === 'string' ? incoming.supabaseAnonKey : undefined,
-    });
+    if (!window.location.hash.includes('cfg=')) return;
+    const incoming = extractConfigFromText(window.location.hash);
+    if (incoming) saveConfig(incoming);
     // Quita las claves de la barra de direcciones
     history.replaceState({}, '', window.location.pathname + window.location.search);
   } catch (e) {
