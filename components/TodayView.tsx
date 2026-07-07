@@ -8,7 +8,7 @@ import EditDoseModal from './EditDoseModal';
 import VitalsForm, { VitalDraft } from './VitalsForm';
 import {
   Camera, Check, X, Clock, AlarmClock, Utensils, Printer, PartyPopper,
-  Share2, Pencil, Plus, HeartPulse, Activity,
+  Share2, Pencil, Plus, HeartPulse,
 } from 'lucide-react';
 
 interface Props {
@@ -184,10 +184,7 @@ const TodayView: React.FC<Props> = ({
     .sort((a, b) => a.time.localeCompare(b.time));
 
   const vitalsSection = (
-    <div className="space-y-3">
-      <h3 className="font-extrabold text-slate-400 uppercase text-sm tracking-wide pt-2 flex items-center gap-2">
-        <Activity className="w-4 h-4" /> Signos vitales de hoy
-      </h3>
+    <div className="space-y-2">
       {todayVitals.map(v => (
         <button
           key={v.id}
@@ -200,7 +197,7 @@ const TodayView: React.FC<Props> = ({
           <div className="flex-1 min-w-0">
             <p className="font-extrabold text-slate-800 leading-tight">{vitalSummary(v) || 'Nota'}</p>
             <p className="text-xs font-semibold text-slate-400 mt-0.5">
-              {formatTime12(v.time)}{v.by ? ` · ${v.by}` : ''}{v.notes ? ` · ${v.notes}` : ''}
+              Signos vitales · {formatTime12(v.time)}{v.by ? ` · ${v.by}` : ''}{v.notes ? ` · ${v.notes}` : ''}
             </p>
           </div>
           <Pencil className="w-4 h-4 text-slate-300 shrink-0" />
@@ -208,9 +205,9 @@ const TodayView: React.FC<Props> = ({
       ))}
       <button
         onClick={() => setVitalsOpen(true)}
-        className="w-full border-2 border-dashed border-slate-300 text-slate-500 font-extrabold py-3.5 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform bg-white/60"
+        className="w-full bg-rose-50 border-2 border-rose-200 text-rose-600 font-extrabold py-3.5 rounded-2xl flex items-center justify-center gap-2 active:scale-95 transition-transform"
       >
-        <Plus className="w-5 h-5" /> Registrar signos vitales
+        <HeartPulse className="w-5 h-5" /> Registrar signos vitales
       </button>
     </div>
   );
@@ -304,6 +301,8 @@ const TodayView: React.FC<Props> = ({
           </button>
         </div>
       </div>
+
+      {vitalsSection}
 
       {schedDoses.length > 0 && (
         <>
@@ -409,8 +408,6 @@ const TodayView: React.FC<Props> = ({
           })}
         </div>
       )}
-
-      {vitalsSection}
 
       {editing && (
         <EditDoseModal
